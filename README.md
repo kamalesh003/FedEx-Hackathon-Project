@@ -16,7 +16,7 @@ A Flask-based web application that enables real-time route optimization using li
 
 ## Technologies Used 🛠  
 - **Backend:** Flask  
-- **Frontend:** HTML, Bootstrap, Folium (for interactive maps)  
+- **Frontend:** HTML, Bootstrap, Folium for interactive maps) ,css,js [Single Page Application Approach] 
 - **Geolocation:** Geopy  
 - **Threading:** For real-time location updates  
 
