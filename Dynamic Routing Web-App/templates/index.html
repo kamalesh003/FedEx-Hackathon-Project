@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time Route Optimizer</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        #map {
+            height: calc(100vh - 100px); /* Map takes up most of the screen */
+            width: 100%;
+        }
+
+        .form-container {
+            padding: 20px;
+            background: #ffffff;
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            max-width: 300px;
+            width: 100%;
+        }
+
+        h3 {
+            margin-top: 0;
+            color: #333;
+            font-size: 18px;
+            text-align: center;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            font-size: 14px;
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        .data-container {
+            position: fixed; /* Fixed position to stay in view */
+            bottom: 10px;    /* Distance from the bottom */
+            right: 10px;     /* Distance from the right */
+            z-index: 1000;   /* Keep it on top */
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            max-width: 300px;
+            max-height: 400px; /* Optional: adjust size if necessary */
+            overflow-y: auto; /* Allow scrolling if content exceeds container height */
+            font-size: 14px;
+        }
+
+        .data-container h4 {
+            margin-top: 0;
+            color: #333;
+        }
+
+        .data-container p {
+            font-size: 14px;
+            margin: 5px 0;
+            color: #555;
+        }
+
+        .error-message {
+            color: red;
+            text-align: center;
+        }
+
+        .route-info {
+            margin-top: 20px;
+            padding: 10px;
+            background: #f1f1f1;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        #loading-bar {
+            display: none;
+            margin-top: 10px;
+            height: 6px;
+            background: linear-gradient(to right, #4caf50, #81c784);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        #loading-bar div {
+            height: 100%;
+            width: 0;
+            background: #66bb6a;
+            animation: loading 1.5s infinite;
+        }
+
+        @keyframes loading {
+            0% { width: 0; }
+            50% { width: 80%; }
+            100% { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="form-container">
+        <h3>Route Optimization</h3>
+        <form id="route-form">
+            <input type="text" id="start-address" placeholder="Start Address" required>
+            <input type="text" id="end-address" placeholder="End Address" required>
+            <select id="vehicle-type">
+                <option value="car">Cargo Van</option>
+                <option value="truck">Truck</option>
+                <option value="small_truck">Light Truck</option>
+            </select>
+            <input type="number" id="load_factor" name="load_factor" min="1" max="10" step="0.1" required>
+            <p style="font-size: 12px; color: #666;">Load Factor refers to the percentage of the vehicle's maximum capacity. A value of 1 indicates 0-10%, 5 indicates 40-60%, and 10 indicates 90-100% of capacity, as per FMCSA, ISO, and IRU standards.</p>
+            <button type="submit">Start Tracking</button>
+        </form>
+        <div id="loading-bar"><div></div></div>
+    </div>
+
+    <div id="map"></div>
+
+    <div class="data-container" id="live-data">
+        <h4>Live Data</h4>
+        <p id="current-location">Location: Loading...</p>
+        <p id="current-weather">Weather: Loading...</p>
+        <p id="current-aqi">Air Quality Index (AQI): Loading...</p>
+        <p id="current-traffic">Traffic Speed: Loading...</p>
+        <p id="current-co2">CO2 Emissions: Loading...</p>
+    </div>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+    <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <script>
+        const map = L.map('map').setView([51.505, -0.09], 13);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        const routeControl = L.Routing.control({
+            waypoints: [],
+            routeWhileDragging: true
+        }).addTo(map);
+
+        const loadingBar = document.getElementById('loading-bar');
+
+        // Show loading progress bar
+        function showLoadingBar() {
+            loadingBar.style.display = 'block';
+        }
+
+        // Hide loading progress bar
+        function hideLoadingBar() {
+            loadingBar.style.display = 'none';
+        }
+
+        // Handle form submission
+        $('#route-form').on('submit', function(event) {
+            event.preventDefault();
+            const startAddress = $('#start-address').val().trim();
+            const endAddress = $('#end-address').val().trim();
+            const vehicleType = $('#vehicle-type').val();
+            const loadFactor = $('#load-factor').val();
+
+            if (!startAddress || !endAddress) {
+                alert('Please provide valid start and end addresses.');
+                return;
+            }
+
+            showLoadingBar();
+
+            $.ajax({
+                url: '/startTracking',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ start_address: startAddress, end_address: endAddress, vehicle_type: vehicleType, load_factor: loadFactor }),
+                success: function(response) {
+                    const { start_coords, end_coords } = response;
+
+                    routeControl.setWaypoints([
+                        L.latLng(start_coords[0], start_coords[1]),
+                        L.latLng(end_coords[0], end_coords[1])
+                    ]);
+
+                    updateLiveData(vehicleType); // Pass vehicle type for emission calculations
+                },
+                error: function() {
+                    alert('Error starting tracking. Please check the addresses.');
+                },
+                complete: function() {
+                    hideLoadingBar();
+                }
+            });
+        });
+
+        // Fetch live updates every 5 seconds
+        function updateLiveData(vehicleType) {
+            setInterval(() => {
+                $.ajax({
+                    url: '/live-updates',
+                    method: 'GET',
+                    success: function(response) {
+                        const { location, weather, aqi, traffic, emissions } = response;
+
+                        $('#current-location').text(`Location: (${location[0].toFixed(4)}, ${location[1].toFixed(4)})`);
+                        $('#current-weather').text(`Weather: ${weather.main.temp}°C, ${weather.weather[0].description}`);
+                        $('#current-aqi').text(`Air Quality Index (AQI): ${aqi.data.aqi}`);
+                        $('#current-traffic').text(`Traffic Speed: ${traffic.flowSegmentData.currentSpeed} km/h`);
+                        $('#current-co2').text(`CO2 Emissions: ${emissions} kg`);
+                    },
+                    error: function() {
+                        $('#live-data').html('<p class="error-message">Error fetching live updates.</p>');
+                    }
+                });
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
