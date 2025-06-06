@@ -1,5 +1,5 @@
 # Dynamic-Routing-Web-App
-[WATCH MY PROJECT IN ACTION (CLICK HERE)](https://youtu.be/UAaNPMNGacE?si=Hn0j4mTli_z7fV-F)
+
 # Real-Time Route Optimizer 🌍🚗  
 
 A Flask-based web application that enables real-time route optimization using live data from multiple APIs. The application tracks routes dynamically, calculates emissions, and provides updates on weather, air quality, and traffic conditions.  
